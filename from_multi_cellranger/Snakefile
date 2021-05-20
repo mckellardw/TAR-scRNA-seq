@@ -18,8 +18,9 @@
 ##########################################################################
 
 import pdb
+import pandas as pd
 ########################################################################################################
-# Configfile
+# Config file
 ########################################################################################################
 configfile:'multi_cellranger_config.yaml'
 ########################################################################################################
@@ -32,11 +33,14 @@ TMPDIR = config['TMPDIR']
 # Variables and references
 ########################################################################################################
 CR_REF = config['CR_REF']
+CHROMS = list(pd.read_table(CR_REF+'/star/chrName.txt', names=['chr'])['chr'])
+print(CHROMS)
+SCAFE_GENOME = config['SCAFE_GENOME']
+
 MERGEBP=str(config['MERGEBP'])
 THRESH=str(config['THRESH'])
 CORES = config['CORES']
 
-#FULLSCRIPTPATH=str(config['FULLSCRIPTPATH'])
 ########################################################################################################
 # Executables
 ########################################################################################################
@@ -48,7 +52,14 @@ GTFTOGENEPRED = config['GTFTOGENEPRED']
 rule all:
 ############## original default call here
 	# input: expand('{DATADIR}/{sample}/multicr_TAR/TAR_diff_uTAR_Features_Labeled.txt', DATADIR=config['DATADIR'], sample=config['Samples'])
-	input: expand('{DATADIR}/{sample}/multicr_TAR/beds/test.txt', DATADIR=config['DATADIR'], sample=config['Samples'])
+	# input: expand('{DATADIR}/{sample}/multicr_TAR/beds/chr1.bed.gz', DATADIR=config['DATADIR'], sample=config['Samples'])
+	input:
+		MERGED=expand('{MERGEDOUTDIR}', MERGEDOUTDIR=config['MERGEDOUTDIR']),
+		# SOLO=expand('{DATADIR}/{sample}/beds/chr1.bed.gz',  DATADIR=config['DATADIR'], sample=config['Samples'])
+		SOLO=expand('{DATADIR}/{sample}/beds/{chr}.bed.gz',  DATADIR=config['DATADIR'], sample=config['Samples'], chr = [CHROMS])
+# beds/split.sorted.bed.gz
+# beds/chr1.bed.gz
+# beds/merged_chr1.bed.gz
 
 # rule getMats:
 # 	input: expand('{DATADIR}/{sample}/multicr_TAR/getMats.txt', DATADIR=config['DATADIR'], sample=config['Samples'])
@@ -101,45 +112,101 @@ rule convertToRefFlat:
 #	shell: """samtools view -s {downSamp} -b {input} > {output}
 
 # Convert the sorted .bam files into bed files, split across each chromosome
-rule bamToChrSplitBeds:
+#TODO- this is super slow...
+# rule bamToChrSplitBeds:
+# 	input:
+# 		BAM='{DATADIR}/{sample}/outs/possorted_genome_bam.bam' #need absolute path
+# 	output:
+# 		BED_TEST='{DATADIR}/{sample}/multicr_TAR/beds/split.sorted.bed.gz', #TODO convert to checkpoint?; temp()
+# 		BED_DIR=directory('{DATADIR}/{sample}/multicr_TAR/beds/')
+# 	params:
+# 		DIR='{DATADIR}/{sample}/multicr_TAR'
+# 	threads: 1 # not parallelized :(
+# 	shell:
+# 		"""
+# 		bash scripts/bamToChrSplitBeds.bash {input.BAM} {CORES} {params.DIR}
+# 		"""
+
+# Convert the sorted .bam file into bed file
+rule bamToBed:
 	input:
 		BAM='{DATADIR}/{sample}/outs/possorted_genome_bam.bam' #need absolute path
 	output:
-		BED_TEST='{DATADIR}/{sample}/multicr_TAR/beds/chr1.bed', #TODO convert to checkpoint?; temp()
-		BED_DIR=directory('{DATADIR}/{sample}/multicr_TAR/beds/')
+		OUTBED='{DATADIR}/{sample}/multicr_TAR/beds/split.sorted.bed.gz'
 	params:
-		DIR='{DATADIR}/{sample}/multicr_TAR'
+		DIR='{DATADIR}/{sample}/multicr_TAR',
+		BED_DIR=directory('{DATADIR}/{sample}/multicr_TAR/beds/')
 	threads: 1 # not parallelized :(
 	shell:
 		"""
-		bash scripts/bamToChrSplitBeds.bash {input.BAM} {CORES} {params.DIR}
+		mkdir -p {output.BED_DIR}
+		bedtools bamtobed -i {input.BAM} -split | LC_ALL=C sort -k1,1V -k2,2n --parallel=30 | awk '{{print $0}}' | gzip > {output.OUTBED}
 		"""
 
-
-# TODO - rule to remove template-switch strand invasion artefacts (denoise peaks, speed up HMM slightly as well)
-# rule TScleanup
-# Standard TSO sequence
-# scafe.tool.cm.remove_strand_invader \
-# --min_edit_distance=5 \
-# --min_end_non_G_num=10 \
-# --overwrite=yes \
-# --ctss_bed_path=./data/snRNA-seq_Tibialis_cellranger_count/outs/possorted_genome_bam/bed/possorted_genome_bam.collapse.ctss.bed.gz \
-# --genome=mm10.gencode_vM25 \
-# --outputPrefix=TSO_d5 \
-# --outDir=./data/snRNA-seq_Tibialis_cellranger_count/outs/
+# OPTIONAL- rule to remove template-switch strand invasion artefacts (denoise peaks, speed up HMM slightly as well)
+# rule TSOcleanup"
+# 	input:
+# 		BED='{DATADIR}/{sample}/multicr_TAR/beds/split.sorted.bed.gz'
+# 	output:
+# 		CLEAN_BED='{DATADIR}/{sample}/multicr_TAR/beds/split.sorted.cleaned.bed.gz'
+# 	params:
+# 		PREFIX='split.sorted.cleaned',
+# 		OUTDIR='{DATADIR}/{sample}/multicr_TAR/beds',
+# 		SCAFE_GENOME=SCAFE_GENOME
+# 	threads: 1 # not parallelized :(
+# 	shell:
+# 		"""
+# 		scafe.tool.cm.remove_strand_invader \
+# 		--overwrite=yes \
+# 		--ctss_bed_path={input.BED} \
+# 		--genome={params.SCAFE_GENOME} \
+# 		--outputPrefix={params.PREFIX} \
+# 		--outDir={params.OUTDIR}
+# 		"""
 
 # TODO- add spurious-A peak removal
 #		Tentatively planning in using a tool from SCAFE, but might need to re-write it...
 
+# TODO - count how many reads were removed for eah of these steps, save in a .log file?
+
+# Convert the bed file into beds, split by chromosome
+rule bedToChrSplitBeds:
+	input:
+		BED='{wildcards.DATADIR}/{wildcards.sample}/multicr_TAR/beds/split.sorted.bed.gz'
+	output:
+		BED_CHR1='{wildcards.DATADIR}/{wildcards.sample}/multicr_TAR/beds/chr1.bed.gz'
+		# BED_CHR='{DATADIR}/{sample}/multicr_TAR/beds/{chr}.bed.gz'
+	params:
+		OUTDIR='{wildcards.DATADIR}/{wildcards.sample}/multicr_TAR/beds'
+	shell:
+		"""
+		zcat {input.BED}  | awk '{{print $0 >> "{params.OUTDIR}/chr"$1".bed"}}'
+		gzip {params.OUTDIR}/*.bed
+		"""
+		# find -name "chr*.bed" -size -1024k -delete #TODO- need this?
 
 # TODO - checkpoint - make output directory for merged HMM files
-# checkpoint makeMergedOutDir:
-# 	input: '{DATADIR}/{sample}',
-# 	output: directory(MERGEDOUTDIR)
-# 	shell:
-# 		"""
-# 		mkdir {output}
-# 		"""
+checkpoint makeMergedOutDir:
+	input:
+		'{wildcards.DATADIR}/{wildcards.sample}/multicr_TAR/beds/chr1.bed.gz',
+	output:
+		directory('{MERGEDOUTDIR}')
+	shell:
+		"""
+		mkdir -p {output}
+		"""
+
+rule mergeChrBeds:
+	input:
+		expand('{DATADIR}/{sample}/multicr_TAR/beds/{chr}.bed.gz', DATADIR=config['DATADIR'], sample=config['Samples'], chr = [CHROMS])
+	output:
+		DIR=directory('{MERGEDOUTDIR}'),
+		MERGECHR='merged.{chr}.bed.gz'
+	shell:
+		"""
+		mkdir -p {output.DIR}
+		bedtools merge {wildcards.DATADIR}/{wildcards.sample}/multicr_TAR/beds/{wildcards.chr}
+		"""
 
 # TODO merge .bed files for each chromosome
 # rule mergeChromBeds
@@ -373,7 +440,7 @@ rule labelDiffuTARs:
 rule getMatsSteps:
 	input:
 		COUNTS='{DATADIR}/{sample}/multicr_TAR/TAR_expression_matrix_withDir.txt.gz',
-		MTX_DIR=directory('{DATADIR}/{sample}/multicr_TAR/TAR_feature_bc_matrix'),
+		MTX_DIR='{DATADIR}/{sample}/multicr_TAR/TAR_feature_bc_matrix',
 		MTX_BC='{DATADIR}/{sample}/multicr_TAR/TAR_feature_bc_matrix/barcodes.tsv.gz',
 		MTX_FEAT='{DATADIR}/{sample}/multicr_TAR/TAR_feature_bc_matrix/features.tsv.gz',
 		MTX_MTX='{DATADIR}/{sample}/multicr_TAR/TAR_feature_bc_matrix/matrix.mtx.gz',

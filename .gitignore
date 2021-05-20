@@ -6,3 +6,10 @@ from_fastqs/temp*
 # Other extraneous files...
 .snakemake
 .Rhistory
+
+# Data files that might accidentally get saved here...
+.bed
+.bed.gz
+.bedGraph
+.bw
+.bam

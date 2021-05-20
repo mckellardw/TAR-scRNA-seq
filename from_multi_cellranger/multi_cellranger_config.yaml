@@ -7,6 +7,7 @@ Samples:
     # snRNA-seq_Tibialis_cellranger_count:
 
 CR_REF: /workdir/dwm269/genomes/mm10_all/mm10_cellranger #DWM - directory containing cellranger count reference
+SCAFE_GENOME: 'mm10.gencode_vM25'
 
 DATADIR: /workdir/dwm269/totalRNA/data # directory where cellranger_count outputs are stored - be sure to use an absolute path (starting with root)
 MERGEDOUTDIR: /workdir/dwm269/totalRNA/data/MULTI_CR_TEST_DIR

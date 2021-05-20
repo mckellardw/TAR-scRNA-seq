@@ -1,6 +1,6 @@
 # bash SingleCellHMM.bash  Path_to_bam_file/PREFIX.bam numberOfThread Path_to_SingleCellHMM.R
 
-INPUT_BAM=$1 #path to .bam file
+INPUT_BED=$1 #path to .bam file
 CORE=$2 # number of cores for parallelization
 #MINCOV=$3
 MERGEBP=$3
@@ -14,12 +14,12 @@ THRESH="${THRESH:-10000000}"
 CURDIR=`pwd` #snakemake directory
 PL="${PL:-${CURDIR}/scripts}"
 
-reads=`samtools view -q 255 $INPUT_BAM | wc -l` #can this samtools cal be parallelized with -@ ?
+reads=`samtools view -q 255 $INPUT_BED | wc -l` #can this samtools cal be parallelized with -@ ?
 echo "Number of aligned reads is $reads"
 minCovReads=`expr $reads / ${THRESH}`
 MINCOV=$minCovReads
 
-PREFIX=`echo ${INPUT_BAM} | rev | cut -d / -f 1 |cut -d . -f 2- |rev` #this is the same for all cellranger pipeline, could just directly name it here
+PREFIX=`echo ${INPUT_BED} | rev | cut -d / -f 1 |cut -d . -f 2- |rev` #this is the same for all cellranger pipeline, could just directly name it here
 
 TMPDIR=${OUTDIR}/${PREFIX}_HMM_features
 mkdir ${TMPDIR}
@@ -27,7 +27,7 @@ mkdir ${TMPDIR}
 exec > >(tee SingleCellHMM_Run_${TMPDIR}.log)
 exec 2>&1
 echo "Path to SingleCellHMM.R   $PL"
-echo "INPUT_BAM                 $INPUT_BAM"
+echo "INPUT_BED                 $INPUT_BED"
 echo "cellranger count folder   $OUTDIR"
 echo "tmp folder                $TMPDIR"
 echo "number Of thread          $CORE"
@@ -38,9 +38,9 @@ echo "Reads spanning over splicing junction will join HMM blocks"
 echo "To avoid that, split reads into small blocks before input to groHMM"
 
 # echo "Spliting and sorting reads..."
-# bedtools bamtobed -i ${INPUT_BAM} -split |LC_ALL=C sort -k1,1V -k2,2n --parallel=30| awk '{print $0}' | gzip > ${TMPDIR}/${PREFIX}_split.sorted.bed.gz
+# bedtools bamtobed -i ${INPUT_BED} -split |LC_ALL=C sort -k1,1V -k2,2n --parallel=30| awk '{print $0}' | gzip > ${TMPDIR}/${PREFIX}_split.sorted.bed.gz
 
-# cd ${TMPDIR}
+cd ${TMPDIR}
 # zcat ${PREFIX}_split.sorted.bed.gz | awk '{print $0 >> "chr"$1".bed"}'
 # find -name "chr*.bed" -size -1024k -delete
 #wc chr*.bed -l > chr_read_count.txt
@@ -48,50 +48,66 @@ echo "To avoid that, split reads into small blocks before input to groHMM"
 echo ""
 echo "Start to run groHMM on each individual chromosome..."
 
-wait_a_second() {
-	joblist=($(jobs -p))
-    while (( ${#joblist[*]} >= ${CORE} ))
-	    do
-	    sleep 1
-	    joblist=($(jobs -p))
-	done
-}
+# wait_a_second() {
+# 	joblist=($(jobs -p))
+#     while (( ${#joblist[*]} >= ${CORE} ))
+# 	    do
+# 	    sleep 1
+# 	    joblist=($(jobs -p))
+# 	done
+# }
 
+# for f in chr*.bed
+# do
+#   wait_a_second
+#   echo ${f}
+#   R --vanilla --slave --args $(pwd) ${f}  < ${PL}/SingleCellHMM.R  > ${f}.log 2>&1 & pids+=($!)
+# done
+# wait "${pids[@]}"
 
-for f in chr*.bed
-do
-  wait_a_second
-  echo ${f}
-  R --vanilla --slave --args $(pwd) ${f}  < ${PL}/SingleCellHMM.R  > ${f}.log 2>&1 & pids+=($!)
-done
-wait "${pids[@]}"
+# Run on individual .bed file (one chromosome at a time)
+R --vanilla --slave --args $(pwd) ${INPUT_BED}  < ${PL}/SingleCellHMM.R  > ${f}.log 2>&1 & pids+=($!)
 
 
 echo ""
 echo "Merging HMM blocks within ${MERGEBP}bp..."
-for f in chr*_HMM.bed
-do
-  LC_ALL=C sort -k1,1V -k2,2n --parallel=30 ${f} > ${f}.sorted.bed
-  cat ${f}.sorted.bed | grep + > ${f}_plus
-  cat ${f}.sorted.bed | grep - > ${f}_minus
-  bedtools merge -s -d ${MERGEBP} -i ${f}_plus > ${f}_plus_merge${MERGEBP} & pids2+=($!)
-  bedtools merge -s -d ${MERGEBP} -i ${f}_minus > ${f}_minus_merge${MERGEBP} & pids2+=($!)
-  wait_a_second
-done
-wait "${pids2[@]}"
+# for f in chr*_HMM.bed
+# do
+#   LC_ALL=C sort -k1,1V -k2,2n --parallel=30 ${f} > ${f}.sorted.bed
+#   cat ${f}.sorted.bed | grep + > ${f}_plus
+#   cat ${f}.sorted.bed | grep - > ${f}_minus
+#   bedtools merge -s -d ${MERGEBP} -i ${f}_plus > ${f}_plus_merge${MERGEBP} & pids2+=($!)
+#   bedtools merge -s -d ${MERGEBP} -i ${f}_minus > ${f}_minus_merge${MERGEBP} & pids2+=($!)
+#   wait_a_second
+# done
+# wait "${pids2[@]}"
 
-cat chr*_HMM.bed_plus_merge${MERGEBP} | awk 'BEGIN{OFS="\t"} {print $0, ".", ".", "+"}' > ${PREFIX}_merge${MERGEBP}
-cat chr*_HMM.bed_minus_merge${MERGEBP} | awk 'BEGIN{OFS="\t"} {print $0, ".", ".", "-"}' >> ${PREFIX}_merge${MERGEBP}
+# ^^^, but single .bed file
+LC_ALL=C sort -k1,1V -k2,2n --parallel=30 ${INPUT_BED} > ${INPUT_BED}.sorted.bed
+cat ${INPUT_BED}.sorted.bed | grep + > ${INPUT_BED}_plus
+cat ${INPUT_BED}.sorted.bed | grep - > ${INPUT_BED}_minus
+bedtools merge -s -d ${MERGEBP} -i ${INPUT_BED}_plus > ${INPUT_BED}_plus_merge${MERGEBP} & pids2+=($!)
+bedtools merge -s -d ${MERGEBP} -i ${INPUT_BED}_minus > ${INPUT_BED}_minus_merge${MERGEBP} & pids2+=($!)
+wait_a_second
+
+
+# cat chr*_HMM.bed_plus_merge${MERGEBP} | awk 'BEGIN{OFS="\t"} {print $0, ".", ".", "+"}' > ${PREFIX}_merge${MERGEBP}
+# cat chr*_HMM.bed_minus_merge${MERGEBP} | awk 'BEGIN{OFS="\t"} {print $0, ".", ".", "-"}' >> ${PREFIX}_merge${MERGEBP}
+cat ${INPUT_BED}_plus_merge${MERGEBP} | awk 'BEGIN{OFS="\t"} {print $0, ".", ".", "+"}' > ${PREFIX}_merge${MERGEBP}
+cat ${INPUT_BED}_plus_merge${MERGEBP} | awk 'BEGIN{OFS="\t"} {print $0, ".", ".", "-"}' >> ${PREFIX}_merge${MERGEBP}
+
+
 
 mkdir toremove
-for f in chr*_HMM.bed
-do
-	mv ${f}.sorted.bed ${f}_plus ${f}_minus ${f}_plus_merge${MERGEBP} ${f}_minus_merge${MERGEBP} toremove/.
-done
-
+# for f in chr*_HMM.bed
+# do
+# 	mv ${f}.sorted.bed ${f}_plus ${f}_minus ${f}_plus_merge${MERGEBP} ${f}_minus_merge${MERGEBP} toremove/.
+# done
+mv ${INPUT_BED}.sorted.bed ${INPUT_BED}_plus ${INPUT_BED}_minus ${INPUT_BED}_plus_merge${MERGEBP} ${INPUT_BED}_minus_merge${MERGEBP} toremove/.
 
 echo ""
 echo "Calculating the coverage..."
+#TODO -  finish converting to single bed as input
 f=${PREFIX}
 LC_ALL=C sort -k1,1V -k2,2n ${f}_merge${MERGEBP} --parallel=30 > ${f}_merge${MERGEBP}.sorted.bed
 rm ${f}_merge${MERGEBP}
