@@ -5,42 +5,6 @@
 Samples:
   C2Cnuc_yPAP1:
   C2Cnuc_ctrl1:
-    # SkMB:
-    # SkMA:
-    # Heart_nuc_ctrl:
-    # SkM_cell_ctrl:
-    # SkM_nuc_ctrl:
-    # Heart_nuc_yPAP:
-    # SkM_cell_yPAP:
-    # SkM_nuc_yPAP:
-  # mock_D7PI:
-  # T1L_D7PI:
-  # Vis_yPAP_3A:
-  # Vis_yPAP_3B:
-  # Vis_yPAP_3C:
-  # Vis_yPAP_3D:
-  # Vis_ctrl_5A:
-  # Vis_ctrl_7B:
-  # Vis_ctrl_9A:
-  # Vis_yPAP_2A:
-  # Vis_yPAP_2B:
-  # Vis_yPAP_2C:
-  # Vis_yPAP_2D:
-
-    # D0:
-    # D1:
-    # D4:
-    # D6:
-    # D8:
-    # D12:
-    # D21:
-    # D4_SmallPattern:
-    # D4_LargePattern:
-    # D21_SmallPattern:
-    # D21_LargePattern:
-
-
-
 
 # .fasta (genome sequence) and .gtf (gene annotations) files used to build STAR reference
 ## Mouse
